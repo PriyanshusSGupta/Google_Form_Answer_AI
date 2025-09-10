@@ -2,7 +2,6 @@
 
 [![Version](https://img.shields.io/badge/Version-2.0.0-blue)](https://github.com/priyanshussgupta/google_form_answer_ai)
 [![License](https://img.shields.io/github/license/priyanshussgupta/google_form_answer_ai)](https://github.com/priyanshussgupta/google_form_answer_ai/blob/main/LICENSE)
-[![Downloads](https://img.shields.io/badge/Downloads-2k+-green)](https://github.com/priyanshussgupta/google_form_answer_ai)
 
 ---
 
@@ -10,7 +9,9 @@
 
 This Chrome extension automatically answers questions in Google Forms quizzes. It leverages powerful large language models (LLMs) to provide solutions for both text and image-based questions, saving you time and effort. Simply activate the extension and watch it fill out the form for you!
 
-![AI Answers Forms Demo](https://i.imgur.com/your-demo-gif.gif) ---
+[![Demo Video Thumbnail](https://img.youtube.com/vi/CrCfnl0OpT8/0.jpg)](https://www.youtube.com/watch?v=CrCfnl0OpT8)
+
+---
 
 ## 🚀 Features
 
