@@ -1,18 +1,34 @@
-const OPENROUTER_API_KEY = "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"; // ❗ PASTE YOUR OPENROUTER API KEY HERE
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL_NAME = "deepseek/deepseek-chat-v3.1:free"; // Or any other model from OpenRouter
+// --- START: API Configuration ---
+// ❗ CHOOSE YOUR AI PROVIDER HERE
+// Change this value to 'GEMINI', 'OPENROUTER', or 'GROQ'
+const CURRENT_PROVIDER = 'GROQ';
 
-const basePrompt = `Please provide an answer for the following multiple-choice question. At the end of your explanation, you must provide the final answer in the format: 'Option : A' or 'Option : 1', where the letter or number corresponds to the correct choice. Question: `;
+const API_CONFIG = {
+    GEMINI: {
+        API_KEY: "YOUR_GEMINI_API_KEY_HERE",
+        // Use a model that supports both text and vision
+        MODEL: "gemini-1.5-flash-latest",
+        getURL: function() { return `https://generativelanguage.googleapis.com/v1beta/models/${this.MODEL}:generateContent?key=${this.API_KEY}` }
+    },
+    OPENROUTER: {
+        API_KEY: "", // ❗ PASTE YOUR OPENROUTER API KEY HERE
+        URL: "https://openrouter.ai/api/v1/chat/completions",
+        // A model that supports both text and vision, often free
+        MODEL: "deepseek/deepseek-chat-v3.1:free",
+    },
+    GROQ: {
+        API_KEY: "",
+        URL: "https://api.groq.com/openai/v1/chat/completions",
+        // A fast text-only model
+        MODEL: "llama-3.3-70b-versatile",
+    }
+};
+// --- END: API Configuration ---
+
+const basePrompt = `Analyze the following multiple-choice question. Respond with ONLY the full text of the correct option. Do not include any explanation, introductory text, or formatting. Question: `;
 
 const getTextAnswers = async (question = "", options = [], ind = 0) => {
   try {
-    if (
-      OPENROUTER_API_KEY === "YOUR_OPENROUTER_API_KEY_HERE" ||
-      !OPENROUTER_API_KEY
-    ) {
-      return "ERROR: Please set your OpenRouter API key in the extension's main.js file.";
-    }
-
     let prompt = `${basePrompt} ${question}  `;
     if (options.length > 0) {
       prompt += `Options are: `;
@@ -21,26 +37,51 @@ const getTextAnswers = async (question = "", options = [], ind = 0) => {
       });
     }
 
-    const requestBody = {
-      model: MODEL_NAME,
-      messages: [{ role: "user", content: prompt }],
-    };
+    let requestBody, apiUrl, headers;
+    const providerConfig = API_CONFIG[CURRENT_PROVIDER];
 
-    const response = await fetch(OPENROUTER_API_URL, {
+    if (!providerConfig || providerConfig.API_KEY.startsWith("YOUR_")) {
+        return `ERROR: Please set your ${CURRENT_PROVIDER} API key in the extension's main.js file.`;
+    }
+
+    switch (CURRENT_PROVIDER) {
+        case 'GEMINI':
+            apiUrl = providerConfig.getURL();
+            headers = { "Content-Type": "application/json" };
+            requestBody = { contents: [{ parts: [{ text: prompt }] }] };
+            break;
+
+        case 'OPENROUTER':
+        case 'GROQ':
+            apiUrl = providerConfig.URL;
+            headers = {
+                Authorization: `Bearer ${providerConfig.API_KEY}`,
+                "Content-Type": "application/json",
+            };
+            if (CURRENT_PROVIDER === 'OPENROUTER') {
+                headers["HTTP-Referer"] = "https://github.com/ancient-ai/ai-answer";
+                headers["X-Title"] = "AI Answers Forms";
+            }
+            requestBody = {
+                model: providerConfig.MODEL,
+                messages: [{ role: "user", content: prompt }],
+            };
+            break;
+
+        default:
+            return `<strong>Configuration Error:</strong><br>Invalid provider "${CURRENT_PROVIDER}" selected.`;
+    }
+
+    const response = await fetch(apiUrl, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/ancient-ai/ai-answer", // Optional but recommended
-        "X-Title": "AI Answers Forms", // Optional but recommended
-      },
+      headers: headers,
       body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error({ msg: "Error in OpenRouter API", error: errorData });
-      return `<strong>OpenRouter API Error:</strong><br><pre>${JSON.stringify(
+      console.error({ msg: `Error in ${CURRENT_PROVIDER} API`, error: errorData });
+      return `<strong>${CURRENT_PROVIDER} API Error:</strong><br><pre>${JSON.stringify(
         errorData,
         null,
         2
@@ -48,13 +89,23 @@ const getTextAnswers = async (question = "", options = [], ind = 0) => {
     }
 
     const data = await response.json();
-    const answer = data.choices?.[0]?.message?.content;
+    let answer;
+
+    switch (CURRENT_PROVIDER) {
+        case 'GEMINI':
+            answer = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            break;
+        case 'OPENROUTER':
+        case 'GROQ':
+            answer = data.choices?.[0]?.message?.content;
+            break;
+    }
 
     if (answer) {
       console.log("ans " + answer);
       return answer;
     }
-    return "No answer found in OpenRouter response.";
+    return `No answer found in ${CURRENT_PROVIDER} response.`;
   } catch (error) {
     console.error({ msg: "Error in API", error });
     return `<strong>Request Failed:</strong><br><pre>${error.message}</pre>`;
@@ -111,6 +162,10 @@ const imageUrlToBase64 = (url) => {
 
 const getImageAns = async (url, question = "", options = []) => {
   try {
+    if (CURRENT_PROVIDER === 'GROQ') {
+        return "<strong>Provider Error:</strong><br>Groq does not support image-based questions.";
+    }
+
     let prompt = `${basePrompt} ${question}. If the primary question is in the image, use that to find the answer. `;
     if (options.length > 0) {
       prompt += `Options are:\n`;
@@ -121,38 +176,61 @@ const getImageAns = async (url, question = "", options = []) => {
 
     const { base64, mimeType } = await imageUrlToBase64(url);
 
-    const requestBody = {
-      model: MODEL_NAME,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { text: prompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64}`,
-              },
-            },
-          ],
-        },
-      ],
-    };
-    const response = await fetch(OPENROUTER_API_URL, {
+    let requestBody, apiUrl, headers;
+    const providerConfig = API_CONFIG[CURRENT_PROVIDER];
+
+    if (!providerConfig || providerConfig.API_KEY.startsWith("YOUR_")) {
+        return `ERROR: Please set your ${CURRENT_PROVIDER} API key in the extension's main.js file.`;
+    }
+
+    switch (CURRENT_PROVIDER) {
+        case 'GEMINI':
+            apiUrl = providerConfig.getURL();
+            headers = { "Content-Type": "application/json" };
+            requestBody = {
+                contents: [{
+                    parts: [
+                        { text: prompt },
+                        { inline_data: { mime_type: mimeType, data: base64 } }
+                    ]
+                }]
+            };
+            break;
+
+        case 'OPENROUTER':
+            apiUrl = providerConfig.URL;
+            headers = {
+                Authorization: `Bearer ${providerConfig.API_KEY}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/ancient-ai/ai-answer",
+                "X-Title": "AI Answers Forms",
+            };
+            requestBody = {
+                model: providerConfig.MODEL,
+                messages: [{
+                    role: "user",
+                    content: [
+                        { text: prompt },
+                        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } }
+                    ]
+                }],
+            };
+            break;
+
+        default:
+             return `<strong>Configuration Error:</strong><br>Invalid provider "${CURRENT_PROVIDER}" selected for image question.`;
+    }
+
+    const response = await fetch(apiUrl, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/ancient-ai/ai-answer", // Optional
-        "X-Title": "AI Answers Forms", // Optional
-      },
+      headers: headers,
       body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error({ msg: "Error in OpenRouter API", error: errorData });
-      return `<strong>OpenRouter API Error:</strong><br><pre>${JSON.stringify(
+      console.error({ msg: `Error in ${CURRENT_PROVIDER} API`, error: errorData });
+      return `<strong>${CURRENT_PROVIDER} API Error:</strong><br><pre>${JSON.stringify(
         errorData,
         null,
         2
@@ -160,28 +238,23 @@ const getImageAns = async (url, question = "", options = []) => {
     }
 
     const data = await response.json();
-    const answer = data.choices?.[0]?.message?.content;
+    let answer;
+
+    switch (CURRENT_PROVIDER) {
+        case 'GEMINI':
+            answer = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            break;
+        case 'OPENROUTER':
+            answer = data.choices?.[0]?.message?.content;
+            break;
+    }
 
     console.log("res:" + answer);
-    return answer || "No answer found in OpenRouter response.";
+    return answer || `No answer found in ${CURRENT_PROVIDER} response.`;
   } catch (error) {
     console.error({ msg: "Error in API", error });
     return `<strong>Request Failed:</strong><br><pre>${error.message}</pre>`;
   }
-};
-
-const extractOptionIndex = (answer) => {
-  const match = answer.match(/Option\s*:?[\s_]*([0-9]+)/i);
-  const match2 = answer.match(/Option\s*:?[\s_]*([a-zA-Z])/i);
-  if (match2 && match2[1]) {
-    const index = match2[1].toLowerCase().charCodeAt(0) - 'a'.charCodeAt(0);
-    return index;
-  }
-  // falback case
-  if (match && match[1]) {
-    return parseInt(match[1], 10) - 1;
-  }
-  return -1;
 };
 
 const getAnswers = async () => {
@@ -221,10 +294,33 @@ const getAnswers = async () => {
             node.classList.add("ai_answers");
             node.innerHTML = convertMarkdownToHtml(answer);
             question.parentElement.insertBefore(node, question);
+            node.style.display = "none";
 
             // 🆕 Auto-select option
-            const optionIndex = extractOptionIndex(answer);
-            if (optionIndex >= 0 && optionIndex < questionOptions.length) {
+            const trimmedAnswer = (answer || "").trim();
+            let optionIndex = -1;
+
+            // First, try for an exact match
+            const exactMatchIndex = questionOptions.findIndex(
+              (opt) => opt.trim() === trimmedAnswer
+            );
+
+            if (exactMatchIndex !== -1) {
+              optionIndex = exactMatchIndex;
+            } else {
+              // Fallback: find the longest option text that is a substring of the answer
+              let bestMatchIndex = -1;
+              let longestMatch = 0;
+              questionOptions.forEach((opt, index) => {
+                if (trimmedAnswer.includes(opt.trim()) && opt.trim().length > longestMatch) {
+                  longestMatch = opt.trim().length;
+                  bestMatchIndex = index;
+                }
+              });
+              optionIndex = bestMatchIndex;
+            }
+
+            if (optionIndex !== -1) {
               const optionDivs = question.querySelectorAll(
                 '[role="radio"], [role="checkbox"]'
               );
@@ -250,10 +346,33 @@ const getAnswers = async () => {
               node.classList.add("ai_answers");
               node.innerHTML = convertMarkdownToHtml(answer);
               question.parentElement.insertBefore(node, question);
+              node.style.display = "none";
 
               // 🆕 Auto-select option
-              const optionIndex = extractOptionIndex(answer);
-              if (optionIndex >= 0 && optionIndex < questionOptions.length) {
+              const trimmedAnswer = (answer || "").trim();
+              let optionIndex = -1;
+
+              // First, try for an exact match
+              const exactMatchIndex = questionOptions.findIndex(
+                (opt) => opt.trim() === trimmedAnswer
+              );
+
+              if (exactMatchIndex !== -1) {
+                optionIndex = exactMatchIndex;
+              } else {
+                // Fallback: find the longest option text that is a substring of the answer
+                let bestMatchIndex = -1;
+                let longestMatch = 0;
+                questionOptions.forEach((opt, index) => {
+                  if (trimmedAnswer.includes(opt.trim()) && opt.trim().length > longestMatch) {
+                    longestMatch = opt.trim().length;
+                    bestMatchIndex = index;
+                  }
+                });
+                optionIndex = bestMatchIndex;
+              }
+
+              if (optionIndex !== -1) {
                 const optionDivs = question.querySelectorAll(
                   '[role="radio"], [role="checkbox"]'
                 );
