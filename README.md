@@ -9,10 +9,6 @@
 
 This Chrome extension automatically answers questions in Google Forms quizzes. It leverages powerful large language models (LLMs) to provide solutions for both text and image-based questions, saving you time and effort. Simply activate the extension and watch it fill out the form for you!
 
-[![Demo Video Thumbnail](https://img.youtube.com/vi/CrCfnl0OpT8/0.jpg)](https://www.youtube.com/watch?v=CrCfnl0OpT8)
-
----
-
 ## 🚀 Features
 
 * **Text & Image Support**: Get answers for both text-based questions and those with images.
